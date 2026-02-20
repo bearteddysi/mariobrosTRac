@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRAC RUNNER — Pixel Adventure</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&display=swap');
+
+  :root {
+    --trac-orange: #FF6B00;
+    --trac-gold: #FFD700;
+    --trac-dark: #0A0A0A;
+    --sky: #1a1a2e;
+    --ground: #16213e;
+    --pixel: 4px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; image-rendering: pixelated; }
+
+  body {
+    background: var(--trac-dark);
+    font-family: 'Press Start 2P', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* SCANLINE OVERLAY */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.15) 2px, rgba(0,0,0,0.15) 4px);
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  #header {
+    text-align: center;
+    margin-bottom: 12px;
+    animation: flicker 3s infinite;
+  }
+
+  #header h1 {
+    font-size: 28px;
+    color: var(--trac-orange);
+    text-shadow: 4px 4px 0 #7a3200, 0 0 20px #ff6b0088;
+    letter-spacing: 4px;
+  }
+
+  #header p {
+    font-size: 8px;
+    color: var(--trac-gold);
+    margin-top: 6px;
+    letter-spacing: 2px;
+  }
+
+  @keyframes flicker {
+    0%,95%,100% { opacity: 1; }
+    96% { opacity: 0.85; }
+    97% { opacity: 1; }
+    98% { opacity: 0.9; }
+  }
+
+  #game-wrapper {
+    position: relative;
+    border: 4px solid var(--trac-orange);
+    box-shadow: 0 0 30px #ff6b0066, inset 0 0 30px #0005;
+  }
+
+  canvas {
+    display: block;
+    background: #0d1b2a;
+  }
+
+  #ui-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: 8px 16px;
+    background: #050a0f;
+    border-top: 3px solid var(--trac-orange);
+  }
+
+  #ui-bar span {
+    font-size: 9px;
+    color: var(--trac-gold);
+  }
+
+  #score-val { color: #fff; }
+  #lives-val { color: #ff4444; }
+  #trac-val { color: var(--trac-orange); }
+
+  #instructions {
+    margin-top: 10px;
+    font-size: 7px;
+    color: #555;
+    text-align: center;
+    letter-spacing: 1px;
+  }
+
+  #instructions span { color: var(--trac-orange); }
+
+  /* GAME OVER / WIN screens */
+  #overlay {
+    position: absolute;
+    inset: 0;
+    background: #000000cc;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 10;
+  }
+
+  #overlay h2 {
+    font-size: 22px;
+    color: var(--trac-orange);
+    text-shadow: 3px 3px 0 #7a3200;
+    animation: pulse 0.8s infinite alternate;
+  }
+
+  #overlay p { font-size: 9px; color: var(--trac-gold); text-align: center; line-height: 1.8; }
+
+  #restart-btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    background: var(--trac-orange);
+    color: #000;
+    border: none;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-bottom: 4px solid #7a3200;
+    transition: transform 0.1s;
+  }
+  #restart-btn:active { transform: translateY(3px); border-bottom-width: 1px; }
+
+  @keyframes pulse {
+    from { text-shadow: 3px 3px 0 #7a3200; }
+    to { text-shadow: 3px 3px 0 #7a3200, 0 0 25px var(--trac-orange); }
+  }
+
+  #overlay { display: none; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>⬛ TRAC RUNNER ⬛</h1>
+  <p>A TRAC NETWORK P2P ARCADE EXPERIENCE</p>
+</div>
+
+<div id="game-wrapper">
+  <canvas id="game" width="720" height="320"></canvas>
+  <div id="ui-bar">
+    <span>SCORE: <span id="score-val">0</span></span>
+    <span>LIVES: <span id="lives-val">♥♥♥</span></span>
+    <span>TNK: <span id="trac-val">0</span></span>
+  </div>
+  <div id="overlay">
+    <h2 id="overlay-title">GAME OVER</h2>
+    <p id="overlay-msg">YOUR TRAC JOURNEY ENDS HERE...<br>PRESS START TO TRY AGAIN</p>
+    <button id="restart-btn">▶ PLAY AGAIN</button>
+  </div>
+</div>
+
+<p id="instructions">
+  <span>[←][→]</span> MOVE &nbsp;|&nbsp; <span>[SPACE]</span> JUMP &nbsp;|&nbsp; <span>[TOUCH]</span> TAP TO JUMP
+</p>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const GROUND_Y = H - 60;
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlay-title');
+const overlayMsg = document.getElementById('overlay-msg');
+
+// ─── COLORS ───────────────────────────────────────────────────
+const C = {
+  sky1: '#0d1b2a', sky2: '#1a2d45',
+  ground1: '#1c3a1c', ground2: '#2d5a2d', groundTop: '#3a7a3a',
+  platformTop: '#FF6B00', platformBody: '#c25000',
+  mario: '#FF6B00', marioShirt: '#FFD700', marioSkin: '#ffcc99',
+  enemy: '#cc2200', enemyEye: '#fff',
+  coin: '#FFD700', coinShine: '#fff',
+  cloud: '#1e3a5f', cloudBright: '#2a5080',
+  star: '#FFD700',
+};
+
+// ─── TRAC LOGO (pixel art 16x16) ──────────────────────────────
+function drawTracLogo(x, y, size) {
+  const px = size;
+  // T
+  ctx.fillStyle = '#FF6B00';
+  ctx.fillRect(x, y, px*5, px);
+  ctx.fillRect(x + px*2, y + px, px, px*4);
+  // R
+  ctx.fillRect(x + px*6, y, px, px*5);
+  ctx.fillRect(x + px*7, y, px*3, px);
+  ctx.fillRect(x + px*10, y + px, px, px);
+  ctx.fillRect(x + px*7, y + px*2, px*3, px);
+  ctx.fillRect(x + px*9, y + px*3, px, px);
+  ctx.fillRect(x + px*10, y + px*4, px, px);
+  // A
+  ctx.fillRect(x + px*12, y + px, px, px*4);
+  ctx.fillRect(x + px*16, y + px, px, px*4);
+  ctx.fillRect(x + px*13, y, px*3, px);
+  ctx.fillRect(x + px*13, y + px*2, px*3, px);
+  // C
+  ctx.fillRect(x + px*19, y, px*4, px);
+  ctx.fillRect(x + px*18, y + px, px, px*3);
+  ctx.fillRect(x + px*19, y + px*4, px*4, px);
+}
+
+// ─── GAME STATE ───────────────────────────────────────────────
+let gameState, player, platforms, enemies, coins, particles, bgStars, scrollX, score, lives, tnk, frame, keys;
+
+function initGame() {
+  scrollX = 0; score = 0; lives = 3; tnk = 0; frame = 0;
+  keys = {};
+
+  player = {
+    x: 80, y: GROUND_Y - 48, vy: 0, vx: 0,
+    w: 24, h: 40,
+    onGround: false, jumps: 0, dir: 1,
+    animFrame: 0, animTimer: 0,
+    dead: false, invincible: 0,
+  };
+
+  // Generate initial platforms
+  platforms = [
+    { x: 0, y: GROUND_Y, w: W * 20, h: 60, type: 'ground' },
+    { x: 250, y: GROUND_Y - 80, w: 100, h: 20, type: 'platform' },
+    { x: 430, y: GROUND_Y - 120, w: 80, h: 20, type: 'platform' },
+    { x: 620, y: GROUND_Y - 70, w: 120, h: 20, type: 'platform' },
+    { x: 820, y: GROUND_Y - 140, w: 80, h: 20, type: 'platform' },
+    { x: 1000, y: GROUND_Y - 90, w: 100, h: 20, type: 'platform' },
+    { x: 1200, y: GROUND_Y - 60, w: 80, h: 20, type: 'platform' },
+    { x: 1380, y: GROUND_Y - 120, w: 100, h: 20, type: 'platform' },
+  ];
+
+  // Coins on platforms
+  coins = [
+    { x: 285, y: GROUND_Y - 120, collected: false },
+    { x: 310, y: GROUND_Y - 120, collected: false },
+    { x: 450, y: GROUND_Y - 160, collected: false },
+    { x: 480, y: GROUND_Y - 160, collected: false },
+    { x: 680, y: GROUND_Y - 110, collected: false },
+    { x: 710, y: GROUND_Y - 110, collected: false },
+    { x: 860, y: GROUND_Y - 180, collected: false },
+    { x: 1050, y: GROUND_Y - 130, collected: false },
+    { x: 1080, y: GROUND_Y - 130, collected: false },
+    { x: 1250, y: GROUND_Y - 100, collected: false },
+    { x: 1420, y: GROUND_Y - 160, collected: false },
+    { x: 1450, y: GROUND_Y - 160, collected: false },
+  ];
+
+  enemies = [
+    { x: 400, y: GROUND_Y - 30, w: 28, h: 30, vx: -1.2, dead: false, flat: 0 },
+    { x: 700, y: GROUND_Y - 30, w: 28, h: 30, vx: -1.5, dead: false, flat: 0 },
+    { x: 900, y: GROUND_Y - 30, w: 28, h: 30, vx: -1.2, dead: false, flat: 0 },
+    { x: 1100, y: GROUND_Y - 30, w: 28, h: 30, vx: -1.8, dead: false, flat: 0 },
+    { x: 1300, y: GROUND_Y - 30, w: 28, h: 30, vx: -1.5, dead: false, flat: 0 },
+  ];
+
+  particles = [];
+
+  // Background stars
+  bgStars = Array.from({length: 50}, () => ({
+    x: Math.random() * W * 20,
+    y: Math.random() * (GROUND_Y - 60),
+    r: Math.random() * 2 + 0.5,
+    twinkle: Math.random() * Math.PI * 2
+  }));
+
+  gameState = 'playing';
+  overlay.style.display = 'none';
+  updateUI();
+}
+
+function updateUI() {
+  document.getElementById('score-val').textContent = score;
+  document.getElementById('lives-val').textContent = '♥'.repeat(lives);
+  document.getElementById('trac-val').textContent = tnk;
+}
+
+// ─── PARTICLE SYSTEM ──────────────────────────────────────────
+function spawnParticles(x, y, color, count = 8) {
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * (2 + Math.random() * 3),
+      vy: Math.sin(angle) * (2 + Math.random() * 3) - 2,
+      color, life: 30, maxLife: 30, r: 4 + Math.random() * 4
+    });
+  }
+}
+
+// ─── DRAW TRAC MARIO CHARACTER ────────────────────────────────
+function drawPlayer(p) {
+  const x = p.x - scrollX | 0;
+  const y = p.y | 0;
+  const flip = p.dir < 0;
+  
+  if (p.invincible > 0 && frame % 4 < 2) return; // blink when invincible
+
+  ctx.save();
+  if (flip) {
+    ctx.translate(x + p.w, 0);
+    ctx.scale(-1, 1);
+    ctx.translate(0, 0);
+    drawPlayerSprite(0, y, p);
+  } else {
+    drawPlayerSprite(x, y, p);
+  }
+  ctx.restore();
+}
+
+function drawPlayerSprite(x, y, p) {
+  const run = p.animFrame;
+  const airborne = !p.onGround;
+  
+  // Hat (orange TRAC cap)
+  ctx.fillStyle = C.mario;
+  ctx.fillRect(x + 2, y, 20, 6);
+  ctx.fillRect(x, y + 4, 24, 4);
+  
+  // TRAC letter on hat
+  ctx.fillStyle = '#000';
+  ctx.font = '5px "Press Start 2P"';
+  ctx.fillText('T', x + 8, y + 10);
+  
+  // Face
+  ctx.fillStyle = C.marioSkin;
+  ctx.fillRect(x + 4, y + 8, 16, 12);
+  
+  // Eyes
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x + 8, y + 10, 3, 3);
+  ctx.fillRect(x + 14, y + 10, 3, 3);
+  
+  // Mustache
+  ctx.fillStyle = '#8B4513';
+  ctx.fillRect(x + 6, y + 15, 12, 3);
+  
+  // Body (gold shirt with TRAC branding)
+  ctx.fillStyle = C.marioShirt;
+  ctx.fillRect(x + 2, y + 20, 20, 14);
+  
+  // Overalls straps
+  ctx.fillStyle = C.mario;
+  ctx.fillRect(x + 6, y + 20, 5, 14);
+  ctx.fillRect(x + 13, y + 20, 5, 14);
+  
+  // Arms
+  ctx.fillStyle = C.marioSkin;
+  ctx.fillRect(x, y + 22, 4, 8);
+  ctx.fillRect(x + 20, y + 22, 4, 8);
+  
+  // Legs
+  ctx.fillStyle = '#1a1a1a';
+  if (airborne) {
+    ctx.fillRect(x + 2, y + 34, 9, 6);
+    ctx.fillRect(x + 13, y + 34, 9, 6);
+  } else if (run === 1) {
+    ctx.fillRect(x + 2, y + 34, 9, 8);
+    ctx.fillRect(x + 13, y + 30, 9, 8);
+  } else {
+    ctx.fillRect(x + 2, y + 34, 9, 8);
+    ctx.fillRect(x + 13, y + 34, 9, 8);
+  }
+  
+  // Shoes
+  ctx.fillStyle = '#333';
+  ctx.fillRect(x, y + 40, 11, 6);
+  ctx.fillRect(x + 13, y + 40, 11, 6);
+}
+
+// ─── DRAW ENEMY (TRAC TOAD-LIKE) ──────────────────────────────
+function drawEnemy(e) {
+  const x = (e.x - scrollX) | 0;
+  if (x < -50 || x > W + 50) return;
+  const y = e.y | 0;
+  
+  if (e.dead) {
+    // Flat enemy
+    ctx.fillStyle = C.enemy;
+    ctx.fillRect(x, y + 20, e.w, 10);
+    return;
+  }
+  
+  // Body
+  ctx.fillStyle = C.enemy;
+  ctx.fillRect(x + 2, y + 10, 24, 20);
+  
+  // Head/mushroom cap
+  ctx.fillStyle = '#991100';
+  ctx.fillRect(x, y, 28, 14);
+  
+  // White spots on cap
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x + 4, y + 2, 6, 6);
+  ctx.fillRect(x + 16, y + 2, 6, 6);
+  
+  // Eyes
+  ctx.fillStyle = C.enemyEye;
+  ctx.fillRect(x + 5, y + 12, 6, 6);
+  ctx.fillRect(x + 17, y + 12, 6, 6);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x + 7, y + 14, 3, 3);
+  ctx.fillRect(x + 19, y + 14, 3, 3);
+  
+  // Feet
+  ctx.fillStyle = '#660000';
+  ctx.fillRect(x, y + 28, 10, 8);
+  ctx.fillRect(x + 18, y + 28, 10, 8);
+}
+
+// ─── DRAW COIN ────────────────────────────────────────────────
+function drawCoin(c) {
+  if (c.collected) return;
+  const x = (c.x - scrollX) | 0;
+  if (x < -20 || x > W + 20) return;
+  const spin = Math.abs(Math.sin(frame * 0.05 + c.x * 0.01));
+  const w = (16 * spin) | 0;
+  
+  ctx.fillStyle = C.coin;
+  ctx.fillRect(x - w/2 + 8, c.y, w || 2, 16);
+  if (w > 4) {
+    ctx.fillStyle = C.coinShine;
+    ctx.fillRect(x - w/2 + 10, c.y + 3, 3, 8);
+  }
+}
+
+// ─── DRAW PLATFORM ────────────────────────────────────────────
+function drawPlatform(p) {
+  const x = (p.x - scrollX) | 0;
+  if (x + p.w < 0 || x > W) return;
+  
+  if (p.type === 'ground') {
+    // Gradient ground
+    const grad = ctx.createLinearGradient(0, p.y, 0, p.y + p.h);
+    grad.addColorStop(0, '#2d5a2d');
+    grad.addColorStop(0.2, '#1c3a1c');
+    grad.addColorStop(1, '#0a1a0a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, p.y, p.w, p.h);
+    // Grass top
+    ctx.fillStyle = '#3a7a3a';
+    ctx.fillRect(x, p.y, p.w, 8);
+    // Grid pattern
+    ctx.strokeStyle = '#1a2a1a';
+    ctx.lineWidth = 1;
+    for (let gx = 0; gx < p.w; gx += 32) {
+      ctx.beginPath();
+      ctx.moveTo(x + gx, p.y + 8);
+      ctx.lineTo(x + gx, p.y + p.h);
+      ctx.stroke();
+    }
+    for (let gy = 8; gy < p.h; gy += 20) {
+      ctx.beginPath();
+      ctx.moveTo(x, p.y + gy);
+      ctx.lineTo(x + p.w, p.y + gy);
+      ctx.stroke();
+    }
+  } else {
+    // Elevated platform — TRAC orange brick
+    ctx.fillStyle = C.platformBody;
+    ctx.fillRect(x, p.y, p.w, p.h);
+    ctx.fillStyle = C.platformTop;
+    ctx.fillRect(x, p.y, p.w, 5);
+    // Brick divisions
+    ctx.strokeStyle = '#7a3200';
+    ctx.lineWidth = 2;
+    for (let bx = 0; bx < p.w; bx += 24) {
+      ctx.beginPath();
+      ctx.moveTo(x + bx, p.y);
+      ctx.lineTo(x + bx, p.y + p.h);
+      ctx.stroke();
+    }
+    // TRAC logo stamp on wide platforms
+    if (p.w >= 80) {
+      drawTracLogo(x + p.w/2 - 48, p.y - 28, 3);
+    }
+  }
+}
+
+// ─── DRAW BACKGROUND ──────────────────────────────────────────
+function drawBackground() {
+  // Sky gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  skyGrad.addColorStop(0, '#060d1a');
+  skyGrad.addColorStop(1, '#0d2040');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, GROUND_Y);
+  
+  // Stars
+  bgStars.forEach(s => {
+    s.twinkle += 0.02;
+    const alpha = 0.5 + 0.5 * Math.sin(s.twinkle);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = C.star;
+    const sx = (s.x - scrollX * 0.2) % (W * 20);
+    ctx.fillRect(sx % W, s.y, s.r, s.r);
+  });
+  ctx.globalAlpha = 1;
+  
+  // Pixel clouds (TRAC branded)
+  for (let i = 0; i < 5; i++) {
+    const cx = ((i * 300 + 80 - scrollX * 0.3) % (W * 4)) - 200;
+    const cy = 40 + i * 25;
+    drawCloud(cx, cy);
+  }
+}
+
+function drawCloud(x, y) {
+  ctx.fillStyle = C.cloudBright;
+  ctx.fillRect(x, y + 12, 64, 16);
+  ctx.fillRect(x + 12, y + 4, 40, 12);
+  ctx.fillRect(x + 20, y, 24, 8);
+  ctx.fillStyle = C.cloud;
+  ctx.fillRect(x + 2, y + 14, 60, 10);
+  // Tiny TRAC text in cloud
+  ctx.fillStyle = '#FF6B0066';
+  ctx.font = '6px "Press Start 2P"';
+  ctx.fillText('TRAC', x + 12, y + 26);
+}
+
+// ─── PHYSICS ──────────────────────────────────────────────────
+function updatePlayer() {
+  if (player.dead) return;
+  
+  const speed = 3.5;
+  player.vx = 0;
+  
+  if (keys['ArrowLeft'] || keys['KeyA']) { player.vx = -speed; player.dir = -1; }
+  if (keys['ArrowRight'] || keys['KeyD']) { player.vx = speed; player.dir = 1; }
+  
+  // Animate legs
+  if (Math.abs(player.vx) > 0 && player.onGround) {
+    player.animTimer++;
+    if (player.animTimer > 8) { player.animFrame ^= 1; player.animTimer = 0; }
+  } else { player.animFrame = 0; }
+  
+  // Gravity
+  player.vy += 0.5;
+  if (player.vy > 14) player.vy = 14;
+  
+  player.x += player.vx;
+  player.y += player.vy;
+  player.onGround = false;
+  
+  // Platform collision
+  platforms.forEach(p => {
+    if (player.x + player.w > p.x && player.x < p.x + p.w &&
+        player.y + player.h > p.y && player.y + player.h < p.y + p.h + 10 &&
+        player.vy >= 0) {
+      player.y = p.y - player.h;
+      player.vy = 0;
+      player.onGround = true;
+      player.jumps = 0;
+    }
+  });
+  
+  // Cam follows
+  const targetScroll = player.x - W / 3;
+  scrollX += (targetScroll - scrollX) * 0.15;
+  if (scrollX < 0) scrollX = 0;
+  
+  // Invincibility countdown
+  if (player.invincible > 0) player.invincible--;
+  
+  // Fall death
+  if (player.y > H + 100) { playerDie(); }
+}
+
+function playerDie() {
+  if (player.invincible > 0) return;
+  lives--;
+  updateUI();
+  spawnParticles(player.x - scrollX + 12, player.y + 20, C.mario, 12);
+  if (lives <= 0) {
+    showOverlay('GAME OVER', 'YOUR TRAC RUNNER JOURNEY ENDS\nHERE... TRY AGAIN HERO!', false);
+  } else {
+    player.x = 80; player.y = GROUND_Y - 48;
+    player.vy = 0; scrollX = 0;
+    player.invincible = 120;
+  }
+}
+
+function jump() {
+  if (player.onGround || player.jumps < 1) {
+    player.vy = -12;
+    player.onGround = false;
+    player.jumps++;
+    spawnParticles(player.x - scrollX + 12, player.y + player.h, '#ffffff55', 4);
+  }
+}
+
+function updateEnemies() {
+  enemies.forEach(e => {
+    if (e.dead) { e.flat += 1; return; }
+    e.x += e.vx;
+    
+    // Bounce off platforms / ground edges
+    platforms.forEach(p => {
+      if (e.x < p.x || e.x + e.w > p.x + p.w) {
+        // edge check — simple reversal at platform edge
+      }
+    });
+    if (e.x < 10) e.vx = Math.abs(e.vx);
+    if (e.x > W * 15) e.vx = -Math.abs(e.vx);
+    
+    // Stomp detection
+    if (!player.dead && player.invincible === 0) {
+      const px = player.x, py = player.y, pw = player.w, ph = player.h;
+      if (px + pw > e.x && px < e.x + e.w && py + ph > e.y && py + ph < e.y + e.h) {
+        if (player.vy > 0 && py + ph < e.y + 15) {
+          // Stomped!
+          e.dead = true;
+          player.vy = -8;
+          score += 100;
+          tnk += 10;
+          spawnParticles(e.x - scrollX + 14, e.y, C.coin, 10);
+          updateUI();
+        } else {
+          // Hit by enemy
+          playerDie();
+        }
+      }
+    }
+  });
+}
+
+function updateCoins() {
+  coins.forEach(c => {
+    if (c.collected) return;
+    if (player.x + player.w > c.x && player.x < c.x + 16 &&
+        player.y + player.h > c.y && player.y < c.y + 16) {
+      c.collected = true;
+      score += 50;
+      tnk += 5;
+      spawnParticles(c.x - scrollX + 8, c.y + 8, C.coin, 6);
+      updateUI();
+    }
+  });
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.vy += 0.2;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x | 0, p.y | 0, p.r, p.r);
+  });
+  ctx.globalAlpha = 1;
+}
+
+function checkWin() {
+  if (coins.every(c => c.collected)) {
+    showOverlay('YOU WIN! 🏆', `SCORE: ${score} | TNK: ${tnk}\nALL TRAC COINS COLLECTED!\nAWESOME INTERCOM RUNNER!`, true);
+  }
+}
+
+function showOverlay(title, msg, win) {
+  gameState = 'over';
+  overlayTitle.textContent = title;
+  overlayTitle.style.color = win ? C.coin : '#FF4444';
+  overlayMsg.textContent = msg;
+  overlay.style.display = 'flex';
+}
+
+// ─── MAIN LOOP ────────────────────────────────────────────────
+function loop() {
+  requestAnimationFrame(loop);
+  frame++;
+  
+  if (gameState !== 'playing') return;
+  
+  updatePlayer();
+  updateEnemies();
+  updateCoins();
+  updateParticles();
+  checkWin();
+  
+  // DRAW
+  drawBackground();
+  platforms.forEach(drawPlatform);
+  coins.forEach(drawCoin);
+  enemies.forEach(drawEnemy);
+  drawPlayer(player);
+  drawParticles();
+  
+  // HUD overlay
+  ctx.fillStyle = '#00000088';
+  ctx.fillRect(0, 0, W, 28);
+  ctx.fillStyle = C.trac_gold;
+  ctx.font = '10px "Press Start 2P"';
+  ctx.fillStyle = C.coin;
+  ctx.fillText('TRAC RUNNER', W/2 - 72, 18);
+}
+
+// ─── INPUT ────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if ((e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') && gameState === 'playing') {
+    e.preventDefault();
+    jump();
+  }
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// Touch controls
+let touchStartX = 0;
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  touchStartX = e.touches[0].clientX;
+  if (gameState === 'playing') jump();
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const dx = e.touches[0].clientX - touchStartX;
+  keys['ArrowLeft'] = dx < -20;
+  keys['ArrowRight'] = dx > 20;
+});
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  keys['ArrowLeft'] = false;
+  keys['ArrowRight'] = false;
+});
+
+document.getElementById('restart-btn').addEventListener('click', initGame);
+
+// ─── START ────────────────────────────────────────────────────
+initGame();
+loop();
+</script>
+</body>
+</html>
