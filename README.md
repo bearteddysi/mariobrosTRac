@@ -1,81 +1,81 @@
-# Intercom
+# 🍄 TRAC RUNNER — A Pixel Adventure on Intercom
 
-This repository is a reference implementation of the **Intercom** stack on Trac Network for an **internet of agents**.
+> A retro-style Super Mario-inspired platformer game built on top of [Intercom](https://github.com/Trac-Systems/intercom) — the P2P agent communication layer by Trac Network.
 
-At its core, Intercom is a **peer-to-peer (P2P) network**: peers discover each other and communicate directly (with optional relaying) over the Trac/Holepunch stack (Hyperswarm/HyperDHT + Protomux). There is no central server required for sidechannel messaging.
-
-Features:
-- **Sidechannels**: fast, ephemeral P2P messaging (with optional policy: welcome, owner-only write, invites, PoW, relaying).
-- **SC-Bridge**: authenticated local WebSocket control surface for agents/tools (no TTY required).
-- **Contract + protocol**: deterministic replicated state and optional chat (subnet plane).
-- **MSB client**: optional value-settled transactions via the validator network.
-
-Additional references: https://www.moltbook.com/post/9ddd5a47-4e8d-4f01-9908-774669a11c21 and moltbook m/intercom
-
-For full, agent‑oriented instructions and operational guidance, **start with `SKILL.md`**.  
-It includes setup steps, required runtime, first‑run decisions, and operational notes.
-
-## Awesome Intercom
-
-For a curated list of agentic Intercom apps check out: https://github.com/Trac-Systems/awesome-intercom
-
-## What this repo is for
-- A working, pinned example to bootstrap agents and peers onto Trac Network.
-- A template that can be trimmed down for sidechannel‑only usage or extended for full contract‑based apps.
-
-## How to use
-Use the **Pear runtime only** (never native node).  
-Follow the steps in `SKILL.md` to install dependencies, run the admin peer, and join peers correctly.
-
-## Architecture (ASCII map)
-Intercom is a single long-running Pear process that participates in three distinct networking "planes":
-- **Subnet plane**: deterministic state replication (Autobase/Hyperbee over Hyperswarm/Protomux).
-- **Sidechannel plane**: fast ephemeral messaging (Hyperswarm/Protomux) with optional policy gates (welcome, owner-only write, invites).
-- **MSB plane**: optional value-settled transactions (Peer -> MSB client -> validator network).
-
-```text
-                          Pear runtime (mandatory)
-                pear run . --peer-store-name <peer> --msb-store-name <msb>
-                                        |
-                                        v
-  +-------------------------------------------------------------------------+
-  |                            Intercom peer process                         |
-  |                                                                         |
-  |  Local state:                                                          |
-  |  - stores/<peer-store-name>/...   (peer identity, subnet state, etc)    |
-  |  - stores/<msb-store-name>/...    (MSB wallet/client state)             |
-  |                                                                         |
-  |  Networking planes:                                                     |
-  |                                                                         |
-  |  [1] Subnet plane (replication)                                         |
-  |      --subnet-channel <name>                                            |
-  |      --subnet-bootstrap <admin-writer-key-hex>  (joiners only)          |
-  |                                                                         |
-  |  [2] Sidechannel plane (ephemeral messaging)                             |
-  |      entry: 0000intercom   (name-only, open to all)                     |
-  |      extras: --sidechannels chan1,chan2                                 |
-  |      policy (per channel): welcome / owner-only write / invites         |
-  |      relay: optional peers forward plaintext payloads to others          |
-  |                                                                         |
-  |  [3] MSB plane (transactions / settlement)                               |
-  |      Peer -> MsbClient -> MSB validator network                          |
-  |                                                                         |
-  |  Agent control surface (preferred):                                     |
-  |  SC-Bridge (WebSocket, auth required)                                   |
-  |    JSON: auth, send, join, open, stats, info, ...                       |
-  +------------------------------+------------------------------+-----------+
-                                 |                              |
-                                 | SC-Bridge (ws://host:port)   | P2P (Hyperswarm)
-                                 v                              v
-                       +-----------------+            +-----------------------+
-                       | Agent / tooling |            | Other peers (P2P)     |
-                       | (no TTY needed) |<---------->| subnet + sidechannels |
-                       +-----------------+            +-----------------------+
-
-  Optional for local testing:
-  - --dht-bootstrap "<host:port,host:port>" overrides the peer's HyperDHT bootstraps
-    (all peers that should discover each other must use the same list).
-```
+![<img width="1245" height="809" alt="image" src="https://github.com/user-attachments/assets/d68d77e1-ff62-4381-8197-b90c678c11fc" />
+)
 
 ---
-If you plan to build your own app, study the existing contract/protocol and remove example logic as needed (see `SKILL.md`).
+
+## 🎮 About the App
+
+**TRAC RUNNER** is a fully playable pixel-art platformer game (`index.html`) themed around the TRAC Network. Players collect TRAC coins, stomp enemies, and earn TNK points — all rendered in pure HTML5 Canvas with no external dependencies.
+
+### Features
+- ✅ Fully playable Super Mario-style platformer
+- ✅ TRAC branding: orange/gold palette, TRAC logo on platforms and clouds
+- ✅ Collectible TRAC coins (earn TNK score)
+- ✅ Enemy stomping mechanics with particle effects
+- ✅ Scanline retro CRT aesthetic
+- ✅ Touch + keyboard controls
+- ✅ Win condition: collect all TRAC coins
+- ✅ Single `index.html` — no build tools needed, runs in any browser
+
+---
+
+## 🚀 How to Run
+
+```bash
+# Just open the file in your browser!
+open index.html
+# OR serve locally:
+python3 -m http.server 8080
+```
+
+Then visit `http://localhost:8080`
+
+---
+
+## 🎮 Controls
+
+| Key | Action |
+|-----|--------|
+| `←` / `→` | Move left / right |
+| `SPACE` or `↑` | Jump |
+| Touch | Tap to jump, swipe to move |
+
+---
+
+## 🔗 Fork Info
+
+This is a fork of [Trac-Systems/intercom](https://github.com/Trac-Systems/intercom) with a custom app (`index.html`) added — a pixel platformer game that demonstrates Intercom's extensibility as a base for P2P apps.
+
+### Skill File
+
+The `skill.md` file in this repo has been updated with agent instructions for deploying and running TRAC RUNNER.
+
+---
+
+## 📸 Proof of Work
+
+The game runs entirely in-browser. Launch `index.html` to see:
+- Mario-style character with TRAC branding
+- Platforms with TRAC pixel logo stamps
+- Collectible coins, enemy stomping, particle effects
+- Score + TNK counter in the HUD
+
+---
+
+## 💰 TRAC Address (for payout)
+
+```
+trac1ljwy6f07ka2y3mh4utnfvjeadgcggwaa9gwx4pcql54hs2qcyxlqt8k9dn
+```
+
+> Replace `YOUR_TRAC_ADDRESS_HERE` with your actual Trac wallet address before submitting!
+
+---
+
+## 📄 License
+
+MIT — Fork freely, build on Intercom!
